@@ -7,6 +7,7 @@ import json
 from google.appengine.ext import vendor
 vendor.add('lib')
 from google.appengine.api import urlfetch
+from google.appengine.api import taskqueue
 from google.appengine.ext import ndb
 
 from flask import Flask
@@ -19,22 +20,32 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-  prof = Profile()
-  prof.mid = 'aaa'
-  prof.context = 'context'
-  prof.put()
+#  prof = Profile()
+#  prof.mid = 'aaa'
+#  prof.context = 'context'
+#  prof.put()
   return 'hello my line bot'
 
 @app.route('/callback', methods=["POST"])
 def linebot():
   args = json.loads(request.get_data().decode('utf-8'))
-  logging.debug('kick from line server,\n %s'%(args['result']))
+#  logging.debug('kick from line server,\n %s'%(args['result']))
+  queue = taskqueue.Queue('bot-task')
+
   for msg in args['result']:
-    prof = Profile.get_or_insert(msg["content"]["from"], mid=msg["content"]["from"])
-    res = dialogue(msg["content"]["text"], prof.context, 'dialog' )
-    prof.context = res["context"]
-    prof.put()
-    kickBot( msg["content"]["from"], msg["eventType"], res["utt"] )
+#    logging.debug(json.dumps(msg))
+    task = taskqueue.Task(url='/_ah/queue/bot-reply', params={'param': json.dumps(msg) }, method="POST")
+    queue.add(task)
+  return "{}"
+
+@app.route('/_ah/queue/bot-reply', methods=["POST"])
+def reply():
+  msg = json.loads(request.form.get('param').decode('utf-8'))
+  prof = Profile.get_or_insert(msg["content"]["from"], mid=msg["content"]["from"])
+  res = dialogue(msg["content"]["text"], prof.context, 'dialog' )
+  prof.context = res["context"]
+  prof.put()
+  kickBot( msg["content"]["from"], msg["eventType"], res["utt"] )
   return "{}"
 
 def dialogue(msg, context, mode):
